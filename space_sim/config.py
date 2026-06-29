@@ -2,14 +2,14 @@ SCREEN_W = 1280
 SCREEN_H  = 720
 FPS       = 60
 FOV       = 600
-MAX_DEPTH = 3500
+MAX_DEPTH = 5500
 CAM_SPEED = 8
 
-G         = 0.0003   # gravitational constant — tune to taste
+G         = 0.001    # gravitational constant — tune to taste
 
 STAR_COUNT       = 150
 PLANET_PARTICLES = 2000   # kept for reference; EarthVisual no longer uses particles
-PLANET_RADIUS    = 450
+PLANET_RADIUS    = 225
 STARFIELD_SPREAD = 2200
 
 COL_CORE  = (255, 220,  80)

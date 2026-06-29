@@ -6,9 +6,10 @@ TURN_SPEED    = np.radians(1.0)
 THRUST        = 0.5
 DRAG          = 0.98
 MAX_SPEED     = 25.0
-INITIAL_SPEED = 2.5
+INITIAL_SPEED = 3.0
 
-INITIAL_POS   = np.array([0.0, 0.0, -(PLANET_RADIUS + 250.0)], dtype=np.float64)
+# Start far on +Z side; yaw=π faces -Z = directly toward Earth at origin
+INITIAL_POS   = np.array([0.0, 0.0, PLANET_RADIUS * 4.5], dtype=np.float64)
 INITIAL_YAW   = np.pi
 INITIAL_PITCH = 0.0
 
@@ -28,11 +29,14 @@ class Camera:
         self.velocity = _initial_velocity()
         self.speed    = INITIAL_SPEED
 
-    def reset(self):
-        self.pos      = INITIAL_POS.copy()
+    def reset(self, start_pos=None):
+        p             = np.array(start_pos, dtype=np.float64) if start_pos is not None \
+                        else INITIAL_POS.copy()
+        self.pos      = p.copy()
         self.yaw      = INITIAL_YAW
         self.pitch    = INITIAL_PITCH
-        self.velocity = _initial_velocity()
+        toward        = -p / np.linalg.norm(p)   # always aim toward Earth at origin
+        self.velocity = toward * INITIAL_SPEED
         self.speed    = INITIAL_SPEED
 
     def update(self, keys, gravity_sources):

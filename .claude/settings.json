@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(python -c \"import pygame, numpy; print\\('deps ok'\\)\")",
-      "Bash(python -c ' *)"
+      "Bash(python -c ' *)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('main.py'\\).read\\(\\)\\); print\\('OK'\\)\")"
     ]
   }
 }

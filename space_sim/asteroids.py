@@ -2,11 +2,11 @@ import numpy as np
 import pygame
 from config import ASTEROID_COUNT, MAX_DEPTH, PLANET_RADIUS
 
-RING_INNER   = PLANET_RADIUS * 1.25   # inner edge of asteroid belt
-RING_OUTER   = PLANET_RADIUS * 1.65   # outer edge
+RING_INNER   = PLANET_RADIUS * 2.0    # inner edge of asteroid belt
+RING_OUTER   = PLANET_RADIUS * 3.0    # outer edge
 RING_Y_SCALE = 0.28                   # vertical spread as fraction of ring radius
-ASTEROID_MIN_R = 10
-ASTEROID_MAX_R = 22
+ASTEROID_MIN_R = 4
+ASTEROID_MAX_R = 10
 
 # Directional sun — sets light/shadow on rock faces
 _SUN = np.array([0.45, 0.70, 0.25], dtype=np.float32)
@@ -51,9 +51,10 @@ class Rock:
     """
 
     def __init__(self, center, radius, color):
-        self.center = np.array(center, dtype=np.float32)
-        self.radius = float(radius)
-        self.faces  = _ICO_FACES      # shared face index table
+        self.center   = np.array(center, dtype=np.float32)
+        self.radius   = float(radius)
+        self.faces    = _ICO_FACES
+        self.velocity = np.zeros(3, dtype=np.float64)
 
         # Irregular shape: stretch axes randomly, then jitter each vertex
         axis_s = np.random.uniform(0.55, 1.45, 3)
@@ -62,6 +63,33 @@ class Rock:
                             ).astype(np.float32)   # (12, 3) offset from center
 
         self._bake_lighting(color)
+
+    def set_orbital_velocity(self, earth_orbit, fraction=1.0, plane_normal=None):
+        """Give this rock a circular orbital velocity around Earth (origin).
+        plane_normal defines the orbital plane (default: Y axis = equatorial).
+        fraction < 1.0 makes orbits sub-circular."""
+        pos = self.center.astype(np.float64)
+        r   = np.linalg.norm(pos)
+        if r < 1.0:
+            return
+        pos_dir = pos / r
+        n = np.array(plane_normal, dtype=np.float64) if plane_normal is not None \
+            else np.array([0.0, 1.0, 0.0])
+        vel_dir = np.cross(n, pos_dir)
+        vl = np.linalg.norm(vel_dir)
+        if vl < 1e-6:                          # n parallel to pos — pick a fallback
+            n = np.array([1.0, 0.0, 0.0])
+            vel_dir = np.cross(n, pos_dir)
+            vl = np.linalg.norm(vel_dir)
+        self.velocity = (vel_dir / vl) * earth_orbit.speed(r) * fraction
+
+    def update_orbit(self, earth_orbit):
+        """Advance one physics step: apply Earth gravity, move."""
+        pos = self.center.astype(np.float64)
+        r   = np.linalg.norm(pos)
+        if r > 1.0:
+            self.velocity += (-pos / r) * (earth_orbit.gm / r ** 2)
+        self.center = (pos + self.velocity).astype(np.float32)
 
     def _bake_lighting(self, base_color):
         """Pre-compute per-face colour under the fixed sun direction."""
@@ -142,23 +170,27 @@ class Rock:
 
 # ── scene generation ───────────────────────────────────────────────────────────
 
-def create_rocks():
+def create_rocks(count=None, min_r=None, max_r=None, ring_inner=None, ring_outer=None):
     """
     Build an asteroid belt in a torus around Earth (which sits at the world origin).
-    Rocks are spread between RING_INNER and RING_OUTER in the XZ plane with some
-    vertical scatter.  Mix of solo rocks, binary pairs, and loose 3-rock clusters.
+    All size/ring parameters override the module-level defaults when provided.
     Returns (rocks, centers_array, radii_array).
     """
+    count      = ASTEROID_COUNT if count      is None else count
+    min_r      = ASTEROID_MIN_R if min_r      is None else min_r
+    max_r      = ASTEROID_MAX_R if max_r      is None else max_r
+    ring_inner = RING_INNER     if ring_inner is None else ring_inner
+    ring_outer = RING_OUTER     if ring_outer is None else ring_outer
+
     rng    = np.random.default_rng()
     rocks  = []
-    target = ASTEROID_COUNT
+    target = count
 
     while len(rocks) < target:
         roll = rng.random()
 
-        # Random position in the torus ring
         phi    = rng.uniform(0, 2 * np.pi)
-        ring_r = rng.uniform(RING_INNER, RING_OUTER)
+        ring_r = rng.uniform(ring_inner, ring_outer)
         cx     = ring_r * np.cos(phi)
         cz     = ring_r * np.sin(phi)
         cy     = rng.uniform(-ring_r * RING_Y_SCALE, ring_r * RING_Y_SCALE)
@@ -167,7 +199,7 @@ def create_rocks():
 
         if roll < 0.25 and len(rocks) + 3 <= target + 2:
             # 3-rock cluster
-            r0 = rng.uniform(ASTEROID_MIN_R, ASTEROID_MAX_R)
+            r0 = rng.uniform(min_r, max_r)
             rocks.append(Rock([cx, cy, cz], r0, col))
             for _ in range(2):
                 off = r0 * rng.uniform(2.0, 3.5)
@@ -176,12 +208,12 @@ def create_rocks():
                     [cx + rng.uniform(-off, off),
                      cy + rng.uniform(-off * 0.4, off * 0.4),
                      cz + rng.uniform(-off, off)],
-                    rng.uniform(ASTEROID_MIN_R * 0.5, r0 * 0.8), c2))
+                    rng.uniform(min_r * 0.5, r0 * 0.8), c2))
 
         elif roll < 0.50 and len(rocks) + 2 <= target + 1:
             # Binary pair
-            r0  = rng.uniform(ASTEROID_MIN_R, ASTEROID_MAX_R)
-            r1  = rng.uniform(ASTEROID_MIN_R * 0.5, r0 * 0.85)
+            r0  = rng.uniform(min_r, max_r)
+            r1  = rng.uniform(min_r * 0.5, r0 * 0.85)
             sep = (r0 + r1) * rng.uniform(1.5, 2.5)
             rocks.append(Rock([cx, cy, cz], r0, col))
             c2  = _ROCK_PALETTES[int(rng.integers(len(_ROCK_PALETTES)))]
@@ -193,7 +225,7 @@ def create_rocks():
 
         else:
             # Solo
-            r = rng.uniform(ASTEROID_MIN_R, ASTEROID_MAX_R)
+            r = rng.uniform(min_r, max_r)
             rocks.append(Rock([cx, cy, cz], r, col))
 
     centers = np.array([r.center for r in rocks], dtype=np.float32)
